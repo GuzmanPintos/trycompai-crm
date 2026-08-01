@@ -148,7 +148,13 @@ boundary is egress, and it is three rules:
 `agent/sandbox/sandbox.ts` turns on `bash`, the file tools, and a `/workspace`,
 with **`deny-all` egress** set on the backend factory so it cannot be forgotten
 per session. That costs nothing: `web_fetch` runs in the app runtime and
-`web_search` at the model provider, so retrieval is unaffected.
+`web_search` at the model provider, so retrieval is unaffected. The default
+backend remains eve's availability-aware Vercel/local selection; an install can
+set `SANDBOX_PROVIDER="tenki"` and `TENKI_API_KEY` to use Tenki microVMs instead.
+The Tenki adapter maps `/workspace` onto its guest filesystem, snapshots eve's
+seeded template, and pauses live VMs on shutdown so durable sessions reattach.
+It also probes `deny-all` before writing anything into a new VM and refuses the
+session if direct egress is reachable despite the provider setting.
 
 **Never give the sandbox `DATABASE_URL`.** CRM access is authored tools in the
 app runtime. A shell with credentials and network is exfiltration-shaped even in

@@ -110,6 +110,36 @@ Live in `packages/auth/src/workspace.ts`.
   app reads it, and only server-side: the browser never learns the agent has an
   origin of its own. See [the agent bridge](./agent.md#the-bridge).
 
+## Sandbox provider
+
+The research agent uses eve's availability-aware sandbox by default: Vercel
+Sandbox on Vercel, then Docker, microsandbox or just-bash according to what the
+host supports. An install can instead pin every agent sandbox to Tenki:
+
+```sh
+SANDBOX_PROVIDER="tenki"
+TENKI_API_KEY="tk_..."
+```
+
+`SANDBOX_PROVIDER` accepts `auto` (the default) or `tenki`. Tenki's SDK also
+accepts `TENKI_AUTH_TOKEN`; `TENKI_API_KEY` is the documented name for this
+repo. `TENKI_API_ENDPOINT` is an optional service endpoint override and should
+normally be omitted.
+
+This is process configuration, not a rep preference. The provider owns durable
+sandbox reconnect state and its credential is a deployment secret, so everyone
+using one install shares the same backend. Changing provider preserves the eve
+conversation and CRM audit trail but starts a fresh `/workspace` on the next
+turn.
+
+The Tenki key exists only in the trusted agent runtime. It is never included in
+the sandbox environment, and the CRM's `deny-all` egress policy maps to a Tenki
+session with inbound and outbound networking disabled. A missing key is fine
+under `auto`; selecting `tenki` without one is an explicit configuration error.
+Before any seed or CRM-derived data enters a VM, the adapter verifies that a
+direct external socket is actually blocked. A provider or SDK regression fails
+the session closed instead of silently weakening this boundary.
+
 ## Typed, validated env
 
 `apps/api/src/config/env.validation.ts` is a `class-validator` schema run by

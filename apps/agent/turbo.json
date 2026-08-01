@@ -4,6 +4,8 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
+			"env": ["SANDBOX_PROVIDER", "TENKI_API_ENDPOINT"],
+			"passThroughEnv": ["TENKI_API_KEY", "TENKI_AUTH_TOKEN"],
 			"outputs": [".eve/**"]
 		},
 		"check-types": {
@@ -20,7 +22,11 @@
 				"DATABASE_URL",
 				"GITHUB_TOKEN",
 				"PERPLEXITY_API_KEY",
-				"RAPIDAPI_KEY"
+				"RAPIDAPI_KEY",
+				"SANDBOX_PROVIDER",
+				"TENKI_API_ENDPOINT",
+				"TENKI_API_KEY",
+				"TENKI_AUTH_TOKEN"
 			]
 		},
 		"test": {
