@@ -16,6 +16,7 @@
 	"dependencies": {
 		"@crm/db": "workspace:*",
 		"@crm/env": "workspace:*",
+		"@tenkicloud/sandbox": "0.5.4",
 		"@vercel/blob": "^2.6.1",
 		"context.dev": "^2.7.0",
 		"eve": "^0.29.4",

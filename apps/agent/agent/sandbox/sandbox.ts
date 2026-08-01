@@ -1,4 +1,5 @@
-import { defaultBackend, defineSandbox } from "eve/sandbox";
+import { defineSandbox } from "eve/sandbox";
+import { configuredSandboxBackend } from "./provider";
 
 /**
  * The agent's shell, with the network taken away.
@@ -22,14 +23,11 @@ import { defaultBackend, defineSandbox } from "eve/sandbox";
  *
  * The policy is set on the backend factory rather than in `onSession` so it
  * applies to every session by construction — a per-session call is a per-session
- * call somebody can forget. No backend is pinned: `defaultBackend()` resolves
- * Vercel Sandbox in production and Docker or microsandbox locally, and each one
- * is told the same thing.
+ * call somebody can forget. The default remains availability-aware — Vercel in
+ * production and Docker or microsandbox locally — while an install can pin
+ * Tenki through `SANDBOX_PROVIDER`. The factory is lazy because eve may load
+ * this authored module before the root environment has been staged.
  */
 export default defineSandbox({
-	backend: defaultBackend({
-		vercel: { networkPolicy: "deny-all" },
-		docker: { networkPolicy: "deny-all" },
-		microsandbox: { networkPolicy: "deny-all" },
-	}),
+	backend: configuredSandboxBackend,
 });
