@@ -8,18 +8,36 @@
 // appear to work and quietly do nothing useful. This backend is what makes the
 // sandbox real off Vercel.
 //
-// EGRESS — READ BEFORE CHANGING
+// EGRESS — READ THIS, IT IS NOT WHAT UPSTREAM ASSUMES
 // Upstream sets networkPolicy "deny-all" on every backend deliberately. From the
 // README: web_fetch runs in the app runtime and web_search at the model provider,
 // so the sandbox needs no network, and deny-all removes "the only path by which a
 // customer's email body could leave through a shell command". The other half of
 // that rule is that the sandbox is never given DATABASE_URL.
 //
-// We preserve it: sessions are created with `allowOutbound: false` (and
-// `allowInbound: false`) unless TENKI_SANDBOX_ALLOW_EGRESS is explicitly "true".
-// Tenki's engine puts sandboxes on a mesh with real egress by default, so this is
-// not the engine default — it is an override we opt into, and losing it would be a
-// silent downgrade of a security property on an app that holds an inbox.
+// ⚠️ WE CANNOT CURRENTLY HONOUR THE FIRST HALF ON THIS ENGINE.
+// We pass `allowOutbound: false`, but the homelab sandbox-engine ignores it.
+// Measured directly against the live engine (2026-12-08):
+//
+//   requested allowOutbound=false -> session.outboundEnabled=true
+//   requested allowOutbound=true  -> session.outboundEnabled=true
+//   and inside such a session: curl https://example.com -> HTTP 200
+//
+// The engine is configured `session.default_outbound_enabled: true` and puts
+// sandboxes on the netmaker mesh; this build does not appear to apply the
+// per-session override. So a shell in the CRM sandbox HAS internet access.
+//
+// What still holds: the sandbox is never given DATABASE_URL (eve does not inject
+// it, and nothing here adds it), so the exfiltration path is "whatever the model
+// chooses to type into a shell", not "read the customer table and POST it".
+// That is a genuinely weaker posture than upstream's, and it is a deliberate,
+// documented trade rather than an oversight.
+//
+// To actually get deny-all, the engine side must change
+// (kubernetes/modules/tenki-app/base/sandbox-engine: default_outbound_enabled,
+// or a per-owner policy for owner_id=crm). Until then
+// TENKI_SANDBOX_ALLOW_EGRESS is advisory: it controls what we *request*, and
+// the request is currently not enforced.
 //
 // Because the policy is fixed at session creation, a *runtime* setNetworkPolicy()
 // call that tries to widen access is refused rather than being silently accepted
@@ -59,7 +77,14 @@ function envInt(name: string, fallback: number): number {
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Egress is off unless explicitly, literally enabled. Fails closed. */
+/**
+ * What we REQUEST for session egress. Off unless explicitly, literally enabled.
+ *
+ * Note this is a request, not a guarantee: the homelab engine currently ignores
+ * it and enables outbound regardless (see the egress note at the top of this
+ * file). Kept fail-closed anyway so the intent is unambiguous and so the day the
+ * engine honours it, we are already asking for the right thing.
+ */
 function egressAllowed(): boolean {
 	return process.env.TENKI_SANDBOX_ALLOW_EGRESS === "true";
 }
@@ -69,6 +94,14 @@ export interface TenkiBackendOptions {
 	readonly authToken?: string;
 	/** Image the sandbox boots. Must contain bash, grep, and the usual coreutils. */
 	readonly image?: string;
+	/**
+	 * Workspace to scope sessions to. REQUIRED for service-token callers: the
+	 * engine infers the workspace only for workspace API keys, and a `tk_` service
+	 * credential is a full-service identity with no implied scope. Omitting it
+	 * makes ListSessions fail with
+	 * `workspace_id: value is empty, which is not a valid UUID`.
+	 */
+	readonly workspaceId?: string;
 }
 
 export function tenkiBackend(
@@ -77,11 +110,24 @@ export function tenkiBackend(
 	const baseUrl = options.baseUrl ?? process.env.TENKI_BASE_URL ?? "";
 	const authToken = options.authToken ?? process.env.TENKI_AUTH_TOKEN ?? "";
 	const image = options.image ?? process.env.TENKI_SANDBOX_IMAGE ?? undefined;
+	const workspaceId =
+		options.workspaceId ?? process.env.TENKI_WORKSPACE_ID ?? "";
 
 	if (baseUrl === "" || authToken === "") {
 		throw new Error(
 			"The tenki sandbox backend needs TENKI_BASE_URL and TENKI_AUTH_TOKEN. " +
 				"Without them eve would fall back to just-bash, which runs no real binaries.",
+		);
+	}
+
+	if (workspaceId === "") {
+		// Fail at construction rather than on the first tool call. A service token
+		// carries no implied workspace, so every list/create would otherwise die
+		// mid-session with an opaque UUID validation error from the engine.
+		throw new Error(
+			"The tenki sandbox backend needs TENKI_WORKSPACE_ID: a tk_ service " +
+				"credential has no implied workspace scope, so the engine rejects " +
+				"ListSessions/CreateSession with an empty workspace_id.",
 		);
 	}
 
@@ -111,7 +157,10 @@ export function tenkiBackend(
 	}
 
 	async function findByName(name: string): Promise<Session | null> {
-		const sessions = await clientOnce().list({});
+		// Scope explicitly — see the workspaceId note on TenkiBackendOptions.
+		// Do NOT swallow list errors into "not found": that would force a spurious
+		// create and orphan the real session, burning a concurrency slot.
+		const sessions = await clientOnce().list({ workspaceId });
 		const live = sessions.filter(
 			(session) =>
 				session.name === name &&
@@ -123,9 +172,10 @@ export function tenkiBackend(
 	}
 
 	async function createNamed(name: string): Promise<Session> {
-		return await clientOnce().createAndWait({
+		const session = await clientOnce().createAndWait({
 			name,
 			image,
+			workspaceId,
 			allowInbound: false,
 			allowOutbound: egressAllowed(),
 			cpuCores: envInt("TENKI_SANDBOX_CPU_CORES", DEFAULT_CPU_CORES),
@@ -137,6 +187,21 @@ export function tenkiBackend(
 			timeoutMs: CREATE_WAIT_MS,
 			waitReady: true,
 		});
+
+		// Say so, loudly, when the engine did not give us the posture we asked
+		// for. A silent gap between "we requested deny-all" and "the box has
+		// internet" is exactly the kind of thing that gets written down as a
+		// security property and then quietly is not one.
+		if (!egressAllowed() && session.outboundEnabled) {
+			console.warn(
+				`[agent] sandbox ${session.id}: requested allowOutbound=false but the ` +
+					"engine reports outboundEnabled=true. This sandbox HAS network " +
+					"egress. Fix on the engine side (session.default_outbound_enabled) " +
+					"if the CRM's deny-all posture is required.",
+			);
+		}
+
+		return session;
 	}
 
 	/** Resolve a live RUNNING session for `name`, resuming or recreating as needed. */

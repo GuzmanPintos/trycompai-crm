@@ -9,11 +9,15 @@ import { tenkiBackend } from "./tenki/backend"; // [tenki]
 //
 // Egress stays deny-all in both paths — see tenki/backend.ts for why that
 // matters here specifically.
-const useTenki =
-	process.env.TENKI_BASE_URL !== undefined &&
-	process.env.TENKI_BASE_URL !== "" &&
-	process.env.TENKI_AUTH_TOKEN !== undefined &&
-	process.env.TENKI_AUTH_TOKEN !== "";
+// All three are required together: a tk_ service credential carries no implied
+// workspace, so the engine rejects list/create without an explicit id. Gate on
+// the full set so a partial config degrades to upstream's backend instead of
+// throwing at import time.
+const useTenki = [
+	process.env.TENKI_BASE_URL,
+	process.env.TENKI_AUTH_TOKEN,
+	process.env.TENKI_WORKSPACE_ID,
+].every((value) => value !== undefined && value !== "");
 
 export default defineSandbox({
 	backend: useTenki

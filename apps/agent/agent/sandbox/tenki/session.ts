@@ -18,8 +18,20 @@ import type {
 	SandboxSpawnOptions,
 } from "eve/sandbox";
 
-/** eve anchors every relative path to /workspace. */
-export const WORKSPACE_ROOT = "/workspace";
+/**
+ * Where relative paths resolve inside a Tenki sandbox.
+ *
+ * eve's own backends anchor to `/workspace`, but the Tenki engine confines file
+ * RPCs to the guest workdir and rejects anything else with
+ * `permission_denied: path outside workdir`. Verified live: `run(["bash","-lc",
+ * "pwd"])` in a fresh session prints `/home/tenki` (HOME=/home/tenki, user
+ * `tenki`), and a write to /workspace/... is refused.
+ *
+ * Overridable because the workdir is a property of the sandbox image, not of
+ * this backend — a future image could move it.
+ */
+export const WORKSPACE_ROOT =
+	process.env.TENKI_SANDBOX_WORKDIR ?? "/home/tenki";
 
 export function resolveWorkspacePath(path: string): string {
 	return path.startsWith("/") ? path : `${WORKSPACE_ROOT}/${path}`;
