@@ -18,9 +18,12 @@
 		"clean": "rm -rf .turbo .eve node_modules"
 	},
 	"dependencies": {
+		"@ai-sdk/openai": "^4.0.33",
+		"@ai-sdk/provider": "^4.0.6",
 		"@crm/db": "workspace:*",
 		"@crm/env": "workspace:*",
 		"@crm/telemetry": "workspace:*",
+		"@tenkicloud/sandbox": "^0.5.4",
 		"context.dev": "^2.7.0",
 		"eve": "^0.29.4",
 		"zod": "^4.4.3"
