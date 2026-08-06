@@ -29,6 +29,11 @@ COPY packages/ui/package.json   packages/ui/
 COPY packages/typescript-config/package.json packages/typescript-config/
 COPY packages/db/prisma packages/db/prisma
 COPY packages/db/prisma.config.ts packages/db/
+# prisma.config.ts imports @crm/env/load, so that workspace package's SOURCE
+# must exist before postinstall runs `prisma generate` — manifests alone give
+# "Cannot find module '@crm/env/load'". It is ~32K of TypeScript with no build
+# step, so copying it here is cheap and keeps the deps layer cacheable.
+COPY packages/env packages/env
 COPY apps/api/scripts/chmod-trpc-binary.mjs apps/api/scripts/
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
 RUN bun install --frozen-lockfile

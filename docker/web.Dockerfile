@@ -22,8 +22,16 @@
 # still the right tool for install and for the api/agent images; it just cannot
 # run this particular server bundle.
 
-FROM oven/bun:1.3.12-debian AS base
+# The base carries BOTH runtimes: bun for install (it owns bun.lock and the
+# workspace protocol) and node to actually run the Next build — see the
+# SIGILL note on the build stage.
+FROM node:22-bookworm-slim AS base
 WORKDIR /repo
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s "bun-v1.3.12" \
+ && bun --version
 
 # ---- deps -------------------------------------------------------------------
 FROM base AS deps
@@ -42,6 +50,11 @@ COPY packages/typescript-config/package.json packages/typescript-config/
 # DATABASE_URL resolvable.
 COPY packages/db/prisma packages/db/prisma
 COPY packages/db/prisma.config.ts packages/db/
+# prisma.config.ts imports @crm/env/load, so that workspace package's SOURCE
+# must exist before postinstall runs `prisma generate` — manifests alone give
+# "Cannot find module '@crm/env/load'". It is ~32K of TypeScript with no build
+# step, so copying it here is cheap and keeps the deps layer cacheable.
+COPY packages/env packages/env
 COPY apps/api/scripts/chmod-trpc-binary.mjs apps/api/scripts/
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
 RUN bun install --frozen-lockfile
@@ -65,9 +78,17 @@ ENV API_URL=$API_URL \
 
 # Re-run install so per-workspace node_modules links exist for the newly copied
 # source, then generate the Prisma client and build.
+#
+# The Next build runs under NODE, not bun. `bun run --filter=app build` on
+# linux/amd64 segfaults partway through the build:
+#   panic: Segmentation fault at address 0x13CD0 ... Signaled with code SIGILL
+# (bun 1.3.12, reproduced on the amd64 devbox). Driving next directly with node
+# avoids bun's runtime entirely for the part that crashes. Install and Prisma
+# generate are still bun, which is what the lockfile expects.
 RUN bun install --frozen-lockfile \
  && bun run --filter=@crm/db db:generate \
- && bun run --filter=app build
+ && cd apps/app \
+ && node node_modules/.bin/next build
 
 # ---- runtime ----------------------------------------------------------------
 # node, not bun — see the note at the top of this file.
