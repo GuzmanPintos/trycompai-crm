@@ -3,7 +3,12 @@ import "@crm/env/load";
 import { DEFAULT_AGENT_MODEL } from "@crm/db/settings";
 import { onTelemetryProblem, syncVersion } from "@crm/telemetry";
 import { defineAgent, defineDynamic } from "eve";
-import { bifrostConfigured, bifrostModel } from "./lib/bifrost"; // [tenki]
+// [tenki]
+import {
+	bifrostConfigured,
+	bifrostDefaultContextWindowTokens,
+	bifrostModel,
+} from "./lib/bifrost";
 import { logCapabilities } from "./lib/capabilities";
 import { selectedModel } from "./lib/model";
 
@@ -27,12 +32,20 @@ export default defineAgent({
 					"step.started": async () => {
 						const selection = await selectedModel();
 						const id = selection?.model ?? DEFAULT_AGENT_MODEL.id;
-						const model = bifrostModel(id);
-						if (model === null) return null;
+						const resolved = bifrostModel(id);
+						if (resolved === null) return null;
+
+						// On substitution the stored window describes the model the
+						// user picked, not the one we are about to call, and eve
+						// never inherits the window — so use the substitute's.
+						const substituteWindow = resolved.substituted
+							? bifrostDefaultContextWindowTokens()
+							: null;
 
 						return {
-							model,
+							model: resolved.model,
 							modelContextWindowTokens:
+								substituteWindow ??
 								selection?.modelContextWindowTokens ??
 								DEFAULT_AGENT_MODEL.contextWindowTokens,
 						};
