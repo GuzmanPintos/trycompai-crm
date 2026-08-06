@@ -1,0 +1,19 @@
+# [tenki] Keep host build artefacts out of the image context. node_modules in
+# particular MUST be excluded: the image installs its own (linux/amd64) tree, and
+# copying a macOS/arm64 one over it produces native modules that cannot load.
+.git
+.github
+**/node_modules
+**/.next
+**/.turbo
+**/.eve
+**/.output
+**/.vercel
+**/dist
+.env
+.env.*
+!.env.example
+docs
+adrs
+**/*.log
+.DS_Store
