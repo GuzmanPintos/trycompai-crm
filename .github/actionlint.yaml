@@ -1,0 +1,3 @@
+self-hosted-runner:
+  labels:
+    - tenki-standard-large-8c-16g

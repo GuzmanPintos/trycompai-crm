@@ -39,7 +39,9 @@ ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
 RUN bun install --frozen-lockfile
 
 # ---- build ------------------------------------------------------------------
-FROM base AS build
+FROM node:24-bookworm-slim AS build
+WORKDIR /repo
+COPY --from=base /usr/local/bin/bun /usr/local/bin/bun
 COPY . .
 COPY --from=deps /repo/node_modules ./node_modules
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public" \
@@ -47,10 +49,11 @@ ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public" \
     NODE_ENV=production
 RUN bun install --frozen-lockfile \
  && bun run --filter=@crm/db db:generate \
- && bun run --filter=agent build
+ && cd apps/agent \
+ && node node_modules/eve/bin/eve.js build
 
 # ---- runtime ----------------------------------------------------------------
-FROM oven/bun:1.3.12-debian AS runtime
+FROM node:24-bookworm-slim AS runtime
 WORKDIR /repo
 ENV NODE_ENV=production \
     PORT=2000
@@ -66,4 +69,4 @@ COPY --from=build --chown=agent:nodejs /repo/packages       ./packages
 USER agent
 EXPOSE 2000
 WORKDIR /repo/apps/agent
-CMD ["bun", "run", "start"]
+CMD ["node", "node_modules/eve/bin/eve.js", "start"]

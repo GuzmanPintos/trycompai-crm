@@ -1,8 +1,8 @@
-# tenki fork of CRM
+# Luxor Tenki fork of CRM
 
-Private fork of [`trycompai/crm`](https://github.com/trycompai/crm) that tracks
-upstream closely while carrying the changes needed to run it on the homelab
-**tenki** Kubernetes cluster instead of Vercel.
+Private Luxor fork of [`trycompai/crm`](https://github.com/trycompai/crm) that
+tracks upstream closely while carrying the changes needed to run it on the
+**tenki-agents** Kubernetes cluster instead of Vercel.
 
 > **TL;DR** — `base/main` is pristine upstream `main`. `tenki` is `base/main` +
 > a short series of `[tenki]`-tagged patch commits, rebased onto upstream `main`
@@ -20,11 +20,11 @@ have to change to run it on Kubernetes:
    Docker → microsandbox → **just-bash**. In a plain container none of the first
    three exist, so it silently lands on `just-bash`: a pure-JS interpreter with a
    virtual filesystem and *no real binaries*. The agent's `bash`/`grep`/`glob`
-   tools would be a toy. We add a backend that talks to the in-cluster Tenki
-   sandbox-engine.
+   tools would be a toy. We add a backend that uses a scoped workspace and API key
+   in Tenki's production sandbox environment.
 3. **The model gateway.** Upstream reaches models by passing model-ID strings to
    eve, which resolves them through the Vercel AI Gateway. We point that at the
-   in-cluster Bifrost gateway.
+   cluster's Bifrost gateway.
 
 ## Branch model
 
@@ -45,8 +45,9 @@ upstream/main ──(pristine mirror)──► base/main
 ## Remotes
 
 ```
-origin    git@github.com:eddiewang/crm.git      (this private fork)
-upstream  https://github.com/trycompai/crm.git  (read-only; push disabled)
+origin     git@github.com:LuxorLabs/crm.git      (this private fork)
+reference  git@github.com:eddiewang/crm.git       (original Tenki patches)
+upstream   https://github.com/trycompai/crm.git   (read-only; push disabled)
 ```
 
 `upstream`'s push URL is the sentinel `DISABLE` so a stray `git push upstream` can
@@ -77,12 +78,13 @@ Current upstream-file touchpoints (keep this list short — run `tenki/touchpoin
 | --- | --- |
 | `apps/agent/agent/sandbox/sandbox.ts` | swap the backend (one line) |
 | `apps/agent/agent/agent.ts` | model resolution via Bifrost |
+| `apps/agent/agent/channels/eve.ts` | remove `localDev()` authentication in production |
 | `apps/app/next.config.ts` | `output: "standalone"` for a slim image |
 
 ## Deploying
 
-The GitOps side lives in `eddiewang/terramate-proxmox`:
-`kubernetes/modules/crm/` + `clusters/tenki/apps/crm-*.yaml`. Images are built on
-the amd64 devbox and pushed to the in-cluster Zot registry
-`registry.tenki.io.eddiewang.me/crm/{web,api,agent}`, then pinned by hand.
-See that repo's `memory/plan-2026-12-08-crm-tenki-deploy.md`.
+The GitOps side lives in `LuxorLabs/fluxor-tenki-agents`. Images publish only
+through the manually dispatched `Publish images` workflow. The workflow builds all
+three `linux/amd64` images before it authenticates to GAR, then publishes immutable
+`sha-<commit>` tags under `us-docker.pkg.dev/analog-stage-198105/mcp/crm-*`.
+GitOps records all three digests together and never follows a mutable tag.

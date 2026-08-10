@@ -1,0 +1,90 @@
+name: Publish images
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Publish the web, agent, and API images from this exact tenki commit
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CI_GCP_PROJECT_ID: ${{ secrets.CI_GCP_PROJECT_ID }}
+  CI_GCP_SERVICE_ACCOUNT: ${{ secrets.CI_GCP_SERVICE_ACCOUNT }}
+  CI_GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.CI_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+  REGISTRY_HOST: us-docker.pkg.dev
+  CI_GCP_REPOSITORY: mcp
+  CRM_ORIGIN: https://crm.agentic-talos.blocksubmit.com
+
+jobs:
+  publish:
+    name: Build and publish CRM images
+    if: github.ref == 'refs/heads/tenki' && inputs.confirm
+    runs-on: tenki-standard-large-8c-16g
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+
+      - name: Build all images
+        run: |
+          set -euo pipefail
+          docker buildx build --load --platform linux/amd64 --tag crm-web:build --file docker/web.Dockerfile --build-arg API_URL="$CRM_ORIGIN" --build-arg APP_URL="$CRM_ORIGIN" .
+          docker buildx build --load --platform linux/amd64 --tag crm-agent:build --file docker/agent.Dockerfile .
+          docker buildx build --load --platform linux/amd64 --tag crm-api:build --file docker/api.Dockerfile .
+
+      - name: Verify image runtimes
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh crm-agent:build -c 'test "$(readlink -f "$(command -v node)")" = /usr/local/bin/node && ! command -v bun >/dev/null 2>&1'
+          docker run --rm --entrypoint grep crm-agent:build -q '"preset": "node-server"' .output/nitro.json
+          docker run --rm --entrypoint node crm-agent:build --input-type=module --eval 'import("ws")'
+          test "$(docker image inspect crm-web:build --format '{{json .Config.Cmd}}')" = '["node","apps/app/server.js"]'
+          test "$(docker image inspect crm-api:build --format '{{json .Config.Cmd}}')" = '["bun","dist/main.js"]'
+
+      - id: auth
+        name: Authenticate to GCP
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          token_format: access_token
+          workload_identity_provider: ${{ env.CI_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.CI_GCP_SERVICE_ACCOUNT }}
+
+      - name: Log in to GAR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+        with:
+          registry: ${{ env.REGISTRY_HOST }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Push all images
+        run: |
+          set -euo pipefail
+          tag="sha-${GITHUB_SHA}"
+          registry="${REGISTRY_HOST}/${CI_GCP_PROJECT_ID}/${CI_GCP_REPOSITORY}"
+          for component in web agent api; do
+            remote_ref="${registry}/crm-${component}:${tag}"
+            docker tag "crm-${component}:build" "$remote_ref"
+            docker push "$remote_ref"
+          done
+          {
+            echo "### Published CRM image digests"
+            for component in web agent api; do
+              remote_ref="${registry}/crm-${component}:${tag}"
+              digest="$(docker buildx imagetools inspect "$remote_ref" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+              echo "- \`${remote_ref}@${digest}\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
