@@ -11,7 +11,7 @@ tracks upstream closely while carrying the changes needed to run it on the
 
 ## Why a fork at all
 
-Upstream is Vercel-first and ships **no Dockerfiles and no images**. Three things
+Upstream is Vercel-first and ships **no Dockerfiles and no images**. Four things
 have to change to run it on Kubernetes:
 
 1. **Container images.** Upstream deploys three Vercel projects. We need three
@@ -25,6 +25,9 @@ have to change to run it on Kubernetes:
 3. **The model gateway.** Upstream reaches models by passing model-ID strings to
    eve, which resolves them through the Vercel AI Gateway. We point that at the
    cluster's Bifrost gateway.
+4. **Production policy and tooling.** Production model requests keep Eve's
+   provider-neutral reasoning level at `high`, and repeatable Tenki template and
+   acceptance tools build and verify the sandbox without storing credentials.
 
 ## Branch model
 
@@ -33,7 +36,8 @@ upstream/main ──(pristine mirror)──► base/main
                                         │
                                         ├─ [tenki] container images for web/api/agent
                                         ├─ [tenki] Tenki sandbox backend for eve
-                                        └─ [tenki] Bifrost model provider
+                                        ├─ [tenki] Bifrost model provider
+                                        └─ [tenki] production policy + Tenki tooling
                                                       └──► tenki   (built + deployed)
 ```
 
@@ -61,7 +65,7 @@ Rebasing onto new upstream `main` should rarely conflict. That holds only if:
    - `docker/` — Dockerfiles and entrypoints
    - `apps/agent/agent/sandbox/tenki/` — the Tenki sandbox backend for eve
    - `apps/agent/agent/lib/bifrost.ts` — the model provider
-   - `tenki/` — this tooling dir
+   - `apps/agent/tenki/` — production template and acceptance tooling
    - `FORK.md` — this file
 
 2. **Edits to existing upstream files are minimized and marked** with a `[tenki]`
@@ -72,7 +76,7 @@ Rebasing onto new upstream `main` should rarely conflict. That holds only if:
    export default defineSandbox({ backend: tenkiBackend() });
    ```
 
-Current upstream-file touchpoints (keep this list short — run `tenki/touchpoints.sh`):
+Current upstream-file touchpoints (keep this list short):
 
 | File | Why |
 | --- | --- |
@@ -80,6 +84,25 @@ Current upstream-file touchpoints (keep this list short — run `tenki/touchpoin
 | `apps/agent/agent/agent.ts` | model resolution via Bifrost |
 | `apps/agent/agent/channels/eve.ts` | remove `localDev()` authentication in production |
 | `apps/app/next.config.ts` | `output: "standalone"` for a slim image |
+
+## Production agent policy and Tenki tooling
+
+`apps/agent/agent/agent.ts` sets `reasoning: "high"` for production model calls.
+This is an explicit production policy. Keep it through upstream rebases, and do
+not lower it without a production policy review.
+
+`apps/agent/tenki/` is the production tooling path. From the agent workspace,
+`bun run tenki:build-template` reconciles and builds the private `crm-agent`
+template, and `bun run tenki:validate-production` runs the fail-closed temporary
+acceptance session. The tools read Tenki credentials from the process
+environment, redact the token from output, and do not store secret values in the
+repository. The acceptance tool requires the immutable private image digest
+returned by `tenki:build-template`; production session creation does not accept
+the template-only `sandbox` base image. The validator always measures real
+outbound HTTPS. It fails by default when egress works; only the literal
+`TENKI_ACCEPT_KNOWN_OUTBOUND_BUG=true` records and accepts the explicitly
+approved Tenki enforcement bug. That exception must never be described as
+deny-all networking.
 
 ## Deploying
 

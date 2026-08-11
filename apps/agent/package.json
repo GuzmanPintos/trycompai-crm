@@ -11,6 +11,8 @@
 		"dispatch": "curl -fsS -X POST \"${AGENT_URL:-http://127.0.0.1:2000}/eve/v1/dev/schedules/dispatch\"",
 		"build": "eve build",
 		"start": "bun scripts/start.ts",
+		"tenki:build-template": "bun tenki/build-template.ts",
+		"tenki:validate-production": "bun tenki/validate-production.ts",
 		"check-types": "tsc --noEmit",
 		"test": "CRM_TELEMETRY_DISABLED=1 bun test",
 		"eval": "CRM_TELEMETRY_DISABLED=1 eve eval",

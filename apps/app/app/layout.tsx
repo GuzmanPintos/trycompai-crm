@@ -21,7 +21,7 @@ const fontMono = Geist_Mono({
 
 export const metadata: Metadata = {
 	title: {
-		default: "Comp AI - CRM",
+		default: "Luxor AI - CRM",
 		template: "%s · Comp AI CRM",
 	},
 	description: "Customer Relationship Management for Comp AI",

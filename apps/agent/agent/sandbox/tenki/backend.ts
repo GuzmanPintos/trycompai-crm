@@ -15,29 +15,24 @@
 // customer's email body could leave through a shell command". The other half of
 // that rule is that the sandbox is never given DATABASE_URL.
 //
-// ⚠️ WE CANNOT CURRENTLY HONOUR THE FIRST HALF ON THIS ENGINE.
-// We pass `allowOutbound: false`, but the homelab sandbox-engine ignores it.
-// Measured directly against the live engine (2026-12-08):
+// ⚠️ TENKI DOES NOT CURRENTLY ENFORCE THE FIRST HALF.
+// We pass `allowOutbound: false`. Production acceptance on 2026-08-11 measured:
 //
-//   requested allowOutbound=false -> session.outboundEnabled=true
-//   requested allowOutbound=true  -> session.outboundEnabled=true
-//   and inside such a session: curl https://example.com -> HTTP 200
+//   requested allowOutbound=false -> session.outboundEnabled=false
+//   and inside the same session: curl https://example.com -> success
 //
-// The engine is configured `session.default_outbound_enabled: true` and puts
-// sandboxes on the netmaker mesh; this build does not appear to apply the
-// per-session override. So a shell in the CRM sandbox HAS internet access.
+// The reported state therefore is not proof of isolation. The user explicitly
+// accepted this known Tenki bug for this rollout pending an engine patch. A shell
+// in the CRM sandbox HAS internet access, and no deployment record may describe
+// it as deny-all.
 //
 // What still holds: the sandbox is never given DATABASE_URL (eve does not inject
-// it, and nothing here adds it), so the exfiltration path is "whatever the model
-// chooses to type into a shell", not "read the customer table and POST it".
-// That is a genuinely weaker posture than upstream's, and it is a deliberate,
-// documented trade rather than an oversight.
+// it, and nothing here adds it), so the exfiltration path is "whatever CRM data
+// the model places into a shell", not direct database access. This remains a
+// weaker posture than upstream and is tracked as an explicit exception.
 //
-// To actually get deny-all, the engine side must change
-// (kubernetes/modules/tenki-app/base/sandbox-engine: default_outbound_enabled,
-// or a per-owner policy for owner_id=crm). Until then
-// TENKI_SANDBOX_ALLOW_EGRESS is advisory: it controls what we *request*, and
-// the request is currently not enforced.
+// TENKI_SANDBOX_ALLOW_EGRESS still controls the fail-closed request. When Tenki
+// fixes enforcement, CRM already asks for the required state.
 //
 // Because the policy is fixed at session creation, a *runtime* setNetworkPolicy()
 // call that tries to widen access is refused rather than being silently accepted
@@ -80,10 +75,10 @@ function envInt(name: string, fallback: number): number {
 /**
  * What we REQUEST for session egress. Off unless explicitly, literally enabled.
  *
- * Note this is a request, not a guarantee: the homelab engine currently ignores
- * it and enables outbound regardless (see the egress note at the top of this
- * file). Kept fail-closed anyway so the intent is unambiguous and so the day the
- * engine honours it, we are already asking for the right thing.
+ * Note this is a request, not a guarantee: production currently reports it as
+ * disabled while still permitting real outbound HTTPS (see the egress note at
+ * the top of this file). Kept fail-closed so the intended policy takes effect
+ * automatically when Tenki fixes enforcement.
  */
 function egressAllowed(): boolean {
 	return process.env.TENKI_SANDBOX_ALLOW_EGRESS === "true";
@@ -132,6 +127,7 @@ export function tenkiBackend(
 	}
 
 	let client: TenkiSandbox | undefined;
+	let outboundExceptionWarned = false;
 	const clientOnce = (): TenkiSandbox => {
 		client ??= new TenkiSandbox({ authToken, baseUrl });
 		return client;
@@ -188,16 +184,15 @@ export function tenkiBackend(
 			waitReady: true,
 		});
 
-		// Say so, loudly, when the engine did not give us the posture we asked
-		// for. A silent gap between "we requested deny-all" and "the box has
-		// internet" is exactly the kind of thing that gets written down as a
-		// security property and then quietly is not one.
-		if (!egressAllowed() && session.outboundEnabled) {
+		// The production engine currently reports `false` while still permitting
+		// real HTTPS. Warn once per process rather than trusting that state or
+		// flooding one warning per durable session.
+		if (!egressAllowed() && !outboundExceptionWarned) {
+			outboundExceptionWarned = true;
 			console.warn(
-				`[agent] sandbox ${session.id}: requested allowOutbound=false but the ` +
-					"engine reports outboundEnabled=true. This sandbox HAS network " +
-					"egress. Fix on the engine side (session.default_outbound_enabled) " +
-					"if the CRM's deny-all posture is required.",
+				"[agent] Tenki was asked for allowOutbound=false, but the approved " +
+					"production exception still permits real sandbox HTTPS even when " +
+					"outboundEnabled reports false. This is not deny-all isolation.",
 			);
 		}
 

@@ -53,6 +53,9 @@ export default defineAgent({
 				}
 			: { "session.started": () => selectedModel() },
 	}),
+	// [tenki] Keep production model calls on the explicitly approved reasoning
+	// policy. Eve maps this provider-agnostic level to Bifrost/OpenAI requests.
+	reasoning: "high",
 	limits: {
 		maxInputTokensPerSession: 500_000,
 		maxOutputTokensPerSession: 50_000,
