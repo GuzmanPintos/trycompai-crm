@@ -146,8 +146,8 @@ A [Turborepo](https://turborepo.dev) monorepo on [Bun](https://bun.com), deploye
 | | |
 | --- | --- |
 | **Agent** | [eve](https://eve.dev) — durable sessions, tools, skills, schedules, sandboxes |
-| **Model** | [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) — no provider SDK, and OIDC on Vercel means no key to manage |
-| **Sandbox** | [Vercel Sandbox](https://vercel.com/docs/vercel-sandbox) in production, Docker or microsandbox locally |
+| **Model** | Direct OpenAI-compatible Bifrost provider at `https://llm.eddiewang.me/openai`; credentials are injected only at runtime |
+| **Sandbox** | [Tenki Cloud](https://tenki.cloud) in this production fork; Docker or microsandbox locally |
 | **Front end** | [Next.js](https://nextjs.org) App Router · [shadcn/ui](https://ui.shadcn.com) · [nuqs](https://nuqs.dev) for URL state |
 | **API** | [NestJS](https://nestjs.com) with [nestjs-trpc](https://nestjs-trpc.io) — HTTP, auth, tRPC, mailbox sync |
 | **Data** | [Prisma](https://prisma.io) · Postgres ([Neon](https://neon.tech)) · optional Redis ([Upstash](https://upstash.com)) |

@@ -2,6 +2,10 @@ import { EnrichmentStatus } from "@crm/db";
 import { APP_AUTH, type AppAuth } from "./app-auth";
 import { brandOutcome, runBrand } from "./brand";
 import { markRunning, settle } from "./enrichment";
+import {
+	dispatchModelSessions,
+	modelDispatchConcurrency,
+} from "./model-dispatch";
 import { collapsing, runLimited } from "./pool";
 import { runPortrait } from "./portrait";
 import {
@@ -18,7 +22,6 @@ export const VISIBLE_BATCH = 60;
 export const VISIBLE_CONCURRENCY = 6;
 export const VISIBLE_LEASE_MS = 2 * 60_000;
 
-export const RESEARCH_BATCH = 12;
 export const RESEARCH_LEASE_MS = 30 * 60_000;
 
 export async function retireAbandoned(): Promise<void> {
@@ -93,15 +96,17 @@ async function runDirect(task: LeasedTask): Promise<void> {
 export async function runResearchLane(
 	start: (task: LeasedTask) => Promise<{ id: string }>,
 ): Promise<number> {
+	const concurrency = modelDispatchConcurrency();
 	const tasks = await claimDue(
-		RESEARCH_BATCH,
+		concurrency,
 		{ except: DIRECT_KINDS },
 		RESEARCH_LEASE_MS,
 	);
 	if (tasks.length === 0) return 0;
 
-	await Promise.all(
-		tasks.map(async (task) => {
+	await dispatchModelSessions(
+		tasks,
+		async (task) => {
 			try {
 				await markRunning(task);
 				const session = await start(task);
@@ -110,7 +115,8 @@ export async function runResearchLane(
 				const reason = error instanceof Error ? error.message : String(error);
 				await settle(task, EnrichmentStatus.FAILED, reason).catch(() => {});
 			}
-		}),
+		},
+		concurrency,
 	);
 
 	return tasks.length;

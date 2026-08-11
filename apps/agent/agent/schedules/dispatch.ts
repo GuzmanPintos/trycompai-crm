@@ -6,44 +6,47 @@ import {
 	queueDueAgentRuns,
 } from "../lib/custom-agent-dispatch";
 import { brief, drainAll, taskAuth } from "../lib/dispatch";
+import {
+	dispatchModelSessions,
+	modelDispatchConcurrency,
+} from "../lib/model-dispatch";
 
 export default defineSchedule({
 	cron: "* * * * *",
 	async run({ receive, waitUntil, appAuth }) {
 		waitUntil(
-			Promise.all([
-				drainAll((task) =>
+			(async () => {
+				await drainAll((task) =>
 					receive(crm, {
 						message: brief(task),
 						target: { taskId: task.id },
 						auth: taskAuth(task, appAuth),
 					}),
-				),
-				(async () => {
-					await queueDueAgentRuns();
-					const [builderIds, runIds] = await Promise.all([
-						pendingBuilderSubmissionIds(),
-						pendingAgentRunIds(),
-					]);
+				);
+				await queueDueAgentRuns();
+				const [builderIds, runIds] = await Promise.all([
+					pendingBuilderSubmissionIds(),
+					pendingAgentRunIds(),
+				]);
+				const launches = [
+					...builderIds.map((id) => ({ id, kind: "builder" as const })),
+					...runIds.map((id) => ({ id, kind: "runner" as const })),
+				].slice(0, modelDispatchConcurrency());
 
-					await Promise.all([
-						...builderIds.map((builderSubmissionId) =>
-							receive(crm, {
+				await dispatchModelSessions(launches, (launch) =>
+					launch.kind === "builder"
+						? receive(crm, {
 								message: "Continue a queued private agent-builder chat.",
-								target: { builderSubmissionId },
+								target: { builderSubmissionId: launch.id },
 								auth: appAuth,
-							}),
-						),
-						...runIds.map((runId) =>
-							receive(crm, {
+							})
+						: receive(crm, {
 								message: "Execute a queued deployed agent run.",
-								target: { runId },
+								target: { runId: launch.id },
 								auth: appAuth,
 							}),
-						),
-					]);
-				})(),
-			]),
+				);
+			})(),
 		);
 	},
 });

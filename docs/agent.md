@@ -11,16 +11,29 @@ are in `docs/setup.md`.
 
 ## Model
 
-Default `zai/glm-5.2-fast`; `DEFAULT_AGENT_MODEL` in `@crm/db/settings` because the
-agent and the API both need it.
+The production default is `openai/gpt-5.6-sol` with a 400,000-token context
+window. `DEFAULT_AGENT_MODEL` stays in `@crm/db/settings` because the agent and
+the API both need it.
 
-- **A row (`AppSetting`), not an env var**, via `defineDynamic` on `session.started`.
-  Open conversations keep their model — prompt caches are per model.
-- **`lib/model.ts` always sends `modelContextWindowTokens`**; eve never inherits it.
-- **A failed read logs and keeps the compiled fallback.** Never throws.
-- **The chooser offers only `tool-use` models** (`ModelCatalogService`).
-- **Not a frontier model, deliberately** — refusing wrong answers is enforced by the
-  tools and evidence model, not model strength.
+- Root, `agent_builder`, and `agent_runner` resolve a live model on
+  `step.started`, the only dynamic Eve scope that accepts a direct provider
+  object. They never return a bare gateway model string.
+- Every compiled fallback is classified as a direct external `bifrost` model
+  pointed at `https://llm.eddiewang.me/openai`, with a non-secret placeholder key when
+  credentials are absent during `eve build`.
+- `BIFROST_BASE_URL` and `BIFROST_API_KEY` are runtime-only. A missing value
+  raises a Bifrost configuration error; it never selects Vercel AI Gateway or
+  public OpenAI.
+- Stored models remain rows in `AppSetting`. The root and builder read the
+  current selection; the runner reads its immutable version selection at step
+  scope.
+- An unroutable stored or version selection is replaced by
+  `openai/gpt-5.6-sol` and the replacement always gets the approved 400,000-token
+  window rather than the rejected model's window.
+- Reasoning is `high` on all three agents. `compaction.model` stays unset, so
+  compaction reuses the active Bifrost model.
+- The deployment-owned production catalog contains only approved models and
+  does not fetch the Vercel catalog.
 
 ## Pictures are copied, never linked
 
@@ -50,11 +63,18 @@ agent and the API both need it.
 | | Kinds | How | Per tick |
 | --- | --- | --- | --- |
 | **Visible** | `brand`, `portrait` | Directly — no `receive`, no model | 60, six at a time |
-| **Research** | everything else | One eve session per row | 12 |
+| **Research** | everything else | One eve session per row | 2 |
 
 **Neither visible kind has anything to decide**, and through a session they queued
 behind sixty LLM runs for 25 minutes (`test/lanes.integration.spec.ts`). **The row says
 what the work is; the lane only says whether it needs a conversation.**
+
+`EVE_MODEL_DISPATCH_CONCURRENCY` defaults to two and accepts values from one
+through twenty. Research claims at most that many rows. Builder and runner queues use the same limit, and
+the schedule launches their `receive()` calls in bounded batches. This bounds
+concurrent initial `receive()` calls inside one dispatcher invocation. It is not
+a process-global in-flight session limit: another dispatcher can run, and Eve
+can return from `receive()` before the model session completes.
 
 **Priority**: `brand` 900 · `portrait` 800 · `workspace` 500 · `requested` 300 ·
 `meeting` 200 · `identify` 100 · `sweep` 50 · `companyProfile` 40 · `recheck` 0. The
@@ -527,8 +547,8 @@ bun run --filter=agent dispatch
 
 It drains **both lanes**, exactly as the cron does: up to `VISIBLE_BATCH` (60)
 `brand` and `portrait` rows six at a time, handled in the process with no session
-at all, and `RESEARCH_BATCH` (12) research rows, one session each. So the
-`sessionIds` it prints are the research rows only — a run that resolved forty
+at all, and at most two research rows, one session each. So the `sessionIds` it
+prints are the research rows only — a run that resolved forty
 logos prints an empty list and was not idle. Either way it spends real credits, a
 vendor call per visible row and a model session per research one; that is the
 point of it, and the reason it is a command you run rather than a ticker somebody

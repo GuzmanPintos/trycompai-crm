@@ -66,6 +66,7 @@ jobs:
           docker run --rm --entrypoint sh crm-agent:build -c 'test "$(readlink -f "$(command -v node)")" = /usr/local/bin/node && ! command -v bun >/dev/null 2>&1'
           docker run --rm --entrypoint grep crm-agent:build -q '"preset": "node-server"' .output/nitro.json
           docker run --rm --entrypoint node crm-agent:build --input-type=module --eval 'import("ws")'
+          docker run --rm --entrypoint node crm-agent:build scripts/assert-production-model-routing.mjs
           test "$(docker image inspect crm-web:build --format '{{json .Config.Cmd}}')" = '["node","apps/app/server.js"]'
           test "$(docker image inspect crm-api:build --format '{{json .Config.Cmd}}')" = '["bun","dist/main.js"]'
 

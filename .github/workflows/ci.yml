@@ -50,6 +50,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Eve production builds require real Node 24. Keep CI on the same runtime
+      # so the secret-free compiled-routing regression exercises the image path.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json

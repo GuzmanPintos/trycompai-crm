@@ -98,12 +98,27 @@ single place that knows what is set.
 | `RAPIDAPI_KEY` | LinkedIn profiles via LinkDAPI |
 | `GITHUB_TOKEN` | Raises the GitHub rate limit from 60/hour |
 | `BLOB_READ_WRITE_TOKEN` | Mirrors logos and photos into Blob |
-| `AI_GATEWAY_API_KEY` | The model. Not needed on Vercel (OIDC) |
 | `AGENT_BRIDGE_SECRET` | The rep-facing Agent panel — see `agent.md` |
 
 `BLOB_READ_WRITE_TOKEN` is also in `env.validation.ts` and `apps/api/turbo.json`
 because the API and the seed write pictures too. The Next.js app is deliberately
 excluded — recognising our URL for the image optimizer needs no token.
+
+### Production model routing
+
+All Eve model paths use the external OpenAI-compatible Bifrost endpoint at
+`https://llm.eddiewang.me/openai`. `BIFROST_BASE_URL` and `BIFROST_API_KEY` are
+required at runtime. The key stays runtime-only and must not be passed to
+`eve build` or a Docker build. Build-time provider classification uses a
+non-secret placeholder, and a runtime missing either value fails closed without
+selecting Vercel AI Gateway or public OpenAI.
+
+`BIFROST_ROUTABLE_PREFIXES` defaults to `openai/`. A stored selection outside
+the accepted prefixes is replaced by `openai/gpt-5.6-sol` with its 400,000-token
+window. `EVE_MODEL_DISPATCH_CONCURRENCY` defaults to two and validates the range
+one through twenty. It controls initial `receive()` launch batches in one
+dispatcher, not process-global active sessions after Eve returns from
+`receive()`.
 
 ### The Context key is asked for, not configured
 

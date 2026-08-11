@@ -1,9 +1,11 @@
 import { db, type Prisma } from "@crm/db";
 import type { SendFn } from "eve/channels";
+import {
+	dispatchModelSessions,
+	modelDispatchConcurrency,
+} from "./model-dispatch";
 import { lockAgentRun, runTerminalEventId } from "./run-state";
 
-const BUILDER_BATCH = 20;
-const RUN_BATCH = 20;
 const MAX_BUILDER_ATTEMPTS = 3;
 const BUILDER_LEASE_MS = 5 * 60_000;
 const RUN_DELIVERY_LEASE_MS = 5 * 60_000;
@@ -19,7 +21,7 @@ export async function pendingBuilderSubmissionIds(): Promise<string[]> {
 			},
 		},
 		orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-		take: BUILDER_BATCH * 3,
+		take: modelDispatchConcurrency() * 3,
 		select: { id: true, conversationId: true },
 	});
 
@@ -30,12 +32,12 @@ export async function pendingBuilderSubmissionIds(): Promise<string[]> {
 			seen.add(row.conversationId);
 			return [row.id];
 		})
-		.slice(0, BUILDER_BATCH);
+		.slice(0, modelDispatchConcurrency());
 }
 
 export async function drainBuilder(send: SendFn): Promise<number> {
 	const ids = await pendingBuilderSubmissionIds();
-	await Promise.all(ids.map((id) => dispatchBuilderSubmission(id, send)));
+	await dispatchModelSessions(ids, (id) => dispatchBuilderSubmission(id, send));
 	return ids.length;
 }
 
@@ -193,7 +195,7 @@ export async function queueDueAgentRuns(now = new Date()): Promise<number> {
 			agent: { status: "LIVE" },
 		},
 		orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
-		take: RUN_BATCH,
+		take: modelDispatchConcurrency(),
 		select: {
 			id: true,
 			agentId: true,
@@ -258,7 +260,7 @@ export async function pendingAgentRunIds(): Promise<string[]> {
 	const rows = await db.agentRun.findMany({
 		where: { status: "QUEUED", agent: { status: "LIVE" } },
 		orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-		take: RUN_BATCH,
+		take: modelDispatchConcurrency(),
 		select: { id: true },
 	});
 	return rows.map((row) => row.id);
@@ -267,7 +269,7 @@ export async function pendingAgentRunIds(): Promise<string[]> {
 export async function drainAgentRuns(send: SendFn): Promise<number> {
 	await queueDueAgentRuns();
 	const ids = await pendingAgentRunIds();
-	await Promise.all(ids.map((id) => dispatchAgentRun(id, send)));
+	await dispatchModelSessions(ids, (id) => dispatchAgentRun(id, send));
 	return ids.length;
 }
 
@@ -424,7 +426,7 @@ async function recoverBuilderSubmissions() {
 			sentAt: { lt: stale },
 		},
 		orderBy: [{ sentAt: "asc" }, { id: "asc" }],
-		take: BUILDER_BATCH * 3,
+		take: modelDispatchConcurrency() * 3,
 		select: { id: true, conversationId: true, attemptCount: true },
 	});
 
@@ -486,7 +488,7 @@ async function recoverAgentRuns() {
 			startedAt: { lt: stale },
 		},
 		orderBy: [{ startedAt: "asc" }, { id: "asc" }],
-		take: RUN_BATCH * 3,
+		take: modelDispatchConcurrency() * 3,
 		select: { id: true, agentId: true },
 	});
 

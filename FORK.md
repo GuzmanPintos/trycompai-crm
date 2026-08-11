@@ -23,8 +23,9 @@ have to change to run it on Kubernetes:
    tools would be a toy. We add a backend that uses a scoped workspace and API key
    in Tenki's production sandbox environment.
 3. **The model gateway.** Upstream reaches models by passing model-ID strings to
-   eve, which resolves them through the Vercel AI Gateway. We point that at the
-   cluster's Bifrost gateway.
+   eve, which resolves them through the Vercel AI Gateway. Production uses live
+   direct-provider objects for the external OpenAI-compatible Bifrost endpoint
+   at `https://llm.eddiewang.me/openai` instead.
 4. **Production policy and tooling.** Production model requests keep Eve's
    provider-neutral reasoning level at `high`, and repeatable Tenki template and
    acceptance tools build and verify the sandbox without storing credentials.
@@ -87,9 +88,20 @@ Current upstream-file touchpoints (keep this list short):
 
 ## Production agent policy and Tenki tooling
 
-`apps/agent/agent/agent.ts` sets `reasoning: "high"` for production model calls.
-This is an explicit production policy. Keep it through upstream rebases, and do
-not lower it without a production policy review.
+The root agent, `agent_builder`, and `agent_runner` set `reasoning: "high"` and
+resolve every model call through Bifrost on `step.started`. Their compiled
+fallbacks are also direct Bifrost models with a 400,000-token context window, so
+a resolver failure cannot select Vercel AI Gateway. Compaction has no separate
+model and reuses the active Bifrost model. This is an explicit production
+policy. Keep it through upstream rebases, and do not lower it without a
+production policy review.
+
+Production Bifrost is external at `https://llm.eddiewang.me/openai` and uses
+`openai/gpt-5.6-sol`. `BIFROST_API_KEY` is injected only at runtime. It must
+never be passed to `eve build`, a Docker build argument, or an image layer. A
+non-secret placeholder exists only so the secret-free image build classifies
+the compiled fallback as an external `bifrost` provider. The live AI SDK model
+identifies its chat-completions transport as `bifrost.chat`.
 
 `apps/agent/tenki/` is the production tooling path. From the agent workspace,
 `bun run tenki:build-template` reconciles and builds the private `crm-agent`
