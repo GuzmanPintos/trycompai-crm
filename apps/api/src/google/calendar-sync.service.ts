@@ -27,6 +27,15 @@ const MAX_PAGES_PER_TICK = 5;
 
 const HORIZON_DAYS = 180;
 
+const PAGE_CURSOR_PREFIX = "calendar-page-v1:";
+
+type CalendarPageCursor = {
+	pageToken: string;
+	syncToken?: string;
+	timeMin: string;
+	timeMax: string;
+};
+
 export type SyncOutcome = {
 	source: "calendar";
 	userId: string;
@@ -87,8 +96,13 @@ export class CalendarSyncService {
 			suppressedEmails,
 		};
 
-		let pageToken: string | undefined;
-		let syncToken = row.cursor ?? undefined;
+		const continuation = decodeCalendarPageCursor(row.cursor);
+		let pageToken = continuation?.pageToken;
+		let syncToken = continuation
+			? continuation.syncToken
+			: (row.cursor ?? undefined);
+		const timeMin = continuation?.timeMin ?? new Date().toISOString();
+		const timeMax = continuation?.timeMax ?? this.horizon().toISOString();
 		let written = 0;
 		let removed = 0;
 
@@ -96,8 +110,8 @@ export class CalendarSyncService {
 			const result = await this.calendar.listEvents(token.accessToken, {
 				syncToken,
 				pageToken,
-				timeMin: new Date().toISOString(),
-				timeMax: this.horizon().toISOString(),
+				timeMin,
+				timeMax,
 			});
 
 			if (result.outcome === "cursor-invalid") {
@@ -174,7 +188,19 @@ export class CalendarSyncService {
 			}
 		}
 
+		if (!pageToken) {
+			throw new Error(
+				"Calendar page budget ended without a continuation token.",
+			);
+		}
+
 		await this.state.settle(row.id, {
+			cursor: encodeCalendarPageCursor({
+				pageToken,
+				syncToken,
+				timeMin,
+				timeMax,
+			}),
 			status: GoogleSyncStatus.IDLE,
 		});
 
@@ -431,5 +457,51 @@ export class CalendarSyncService {
 		const to = new Date();
 		to.setDate(to.getDate() + HORIZON_DAYS);
 		return to;
+	}
+}
+
+function encodeCalendarPageCursor(cursor: CalendarPageCursor): string {
+	return `${PAGE_CURSOR_PREFIX}${JSON.stringify(cursor)}`;
+}
+
+function decodeCalendarPageCursor(
+	value: string | null,
+): CalendarPageCursor | null {
+	if (!value?.startsWith(PAGE_CURSOR_PREFIX)) return null;
+
+	try {
+		const parsed = JSON.parse(
+			value.slice(PAGE_CURSOR_PREFIX.length),
+		) as unknown;
+		if (
+			typeof parsed !== "object" ||
+			parsed === null ||
+			Array.isArray(parsed)
+		) {
+			return null;
+		}
+
+		const cursor = parsed as Record<string, unknown>;
+		if (
+			typeof cursor.pageToken !== "string" ||
+			cursor.pageToken.length === 0 ||
+			(cursor.syncToken !== undefined &&
+				typeof cursor.syncToken !== "string") ||
+			typeof cursor.timeMin !== "string" ||
+			typeof cursor.timeMax !== "string"
+		) {
+			return null;
+		}
+
+		return {
+			pageToken: cursor.pageToken,
+			...(cursor.syncToken === undefined
+				? {}
+				: { syncToken: cursor.syncToken as string }),
+			timeMin: cursor.timeMin,
+			timeMax: cursor.timeMax,
+		};
+	} catch {
+		return null;
 	}
 }

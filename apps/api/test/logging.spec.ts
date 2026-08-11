@@ -172,4 +172,39 @@ describe("RequestLoggerMiddleware", () => {
 		expect(requestId).not.toContain("\n");
 		expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
 	});
+
+	it("does not log OAuth query credentials", () => {
+		withNodeEnv("production", () => {
+			const middleware = new RequestLoggerMiddleware();
+			let finish: () => void = () => undefined;
+			const request = {
+				method: "GET",
+				originalUrl:
+					"/api/auth/callback/google?code=one-time-code&state=state-secret",
+				path: "/api/auth/callback/google",
+				ip: "127.0.0.1",
+				get: () => undefined,
+			} as unknown as Request;
+			const response = {
+				statusCode: 302,
+				setHeader: () => undefined,
+				on: (_event: string, listener: () => void) => {
+					finish = listener;
+					return response;
+				},
+			} as unknown as Response;
+
+			let seenPath: string | undefined;
+			const output = captureStdout(() => {
+				middleware.use(request, response, (() => {
+					seenPath = getRequestContext()?.path;
+				}) as NextFunction);
+				finish();
+			});
+
+			expect(seenPath).toBe("/api/auth/callback/google");
+			expect(output).not.toContain("one-time-code");
+			expect(output).not.toContain("state-secret");
+		});
+	});
 });

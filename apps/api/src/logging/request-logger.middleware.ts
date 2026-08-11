@@ -18,7 +18,7 @@ export class RequestLoggerMiddleware implements NestMiddleware {
 		const context: RequestContext = {
 			requestId,
 			method: request.method,
-			path: request.originalUrl,
+			path: request.path,
 		};
 		const startedAt = process.hrtime.bigint();
 
