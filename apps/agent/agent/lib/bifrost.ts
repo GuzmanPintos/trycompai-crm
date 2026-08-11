@@ -2,7 +2,7 @@ import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { type DynamicResolveContext, defineDynamic } from "eve";
 
 export const APPROVED_BIFROST_BASE_URL = "https://llm.eddiewang.me/openai";
-export const APPROVED_BIFROST_MODEL = "openai/gpt-5.6-sol";
+export const APPROVED_BIFROST_MODEL = "openai/gpt-5.6-terra";
 export const APPROVED_BIFROST_CONTEXT_WINDOW_TOKENS = 400_000;
 
 const BUILD_PLACEHOLDER_API_KEY = "bifrost-build-placeholder-not-a-secret";

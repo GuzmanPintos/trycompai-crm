@@ -59,7 +59,7 @@ describe("Bifrost model routing", () => {
 
 		const fallback = bifrost.bifrostFallbackModel();
 		expect(fallback.provider).toBe("bifrost.chat");
-		expect(fallback.modelId).toBe("openai/gpt-5.6-sol");
+		expect(fallback.modelId).toBe("openai/gpt-5.6-terra");
 		expect(bifrost.APPROVED_BIFROST_BASE_URL).toBe(
 			"https://llm.eddiewang.me/openai",
 		);
@@ -72,7 +72,7 @@ describe("Bifrost model routing", () => {
 			BIFROST_API_KEY: undefined,
 		});
 
-		expect(() => bifrost.bifrostModel("openai/gpt-5.6-sol")).toThrow(
+		expect(() => bifrost.bifrostModel("openai/gpt-5.6-terra")).toThrow(
 			/Bifrost configuration error.*BIFROST_BASE_URL.*BIFROST_API_KEY/,
 		);
 	});
@@ -108,7 +108,7 @@ describe("Bifrost model routing", () => {
 		const bifrost = await loadBifrost(configured);
 		const resolved = bifrost.resolveBifrostSelection(null);
 
-		expect(resolved.model.modelId).toBe("openai/gpt-5.6-sol");
+		expect(resolved.model.modelId).toBe("openai/gpt-5.6-terra");
 		expect(resolved.modelContextWindowTokens).toBe(400_000);
 	});
 });

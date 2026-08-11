@@ -16,6 +16,16 @@ if (!builder || !runner) {
 	);
 }
 
+const disabledFrameworkTools = [...manifest.disabledFrameworkTools].sort();
+if (
+	JSON.stringify(disabledFrameworkTools) !==
+	JSON.stringify(["agent", "web_search"])
+) {
+	throw new Error(
+		"Root must disable the agent and provider-defined web_search defaults.",
+	);
+}
+
 for (const [name, node] of [
 	["root", manifest],
 	["agent_builder", builder.agent],
@@ -31,6 +41,9 @@ for (const [name, node] of [
 		config.model.routing.provider !== "bifrost"
 	) {
 		throw new Error(`${name} fallback must use the direct Bifrost provider.`);
+	}
+	if (config.model.id !== "bifrost/openai/gpt-5.6-terra") {
+		throw new Error(`${name} fallback must use the approved Terra model.`);
 	}
 	if (config.model.contextWindowTokens !== 400_000) {
 		throw new Error(`${name} fallback must use a 400000-token context window.`);

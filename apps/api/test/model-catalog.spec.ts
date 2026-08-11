@@ -27,8 +27,8 @@ describe("production model catalog", () => {
 
 		expect(await catalog.models()).toEqual([
 			{
-				id: "openai/gpt-5.6-sol",
-				name: "GPT-5.6 Sol",
+				id: "openai/gpt-5.6-terra",
+				name: "GPT-5.6 Terra",
 				provider: "openai",
 				contextWindowTokens: 400_000,
 				pricing: null,

@@ -97,7 +97,7 @@ policy. Keep it through upstream rebases, and do not lower it without a
 production policy review.
 
 Production Bifrost is external at `https://llm.eddiewang.me/openai` and uses
-`openai/gpt-5.6-sol`. `BIFROST_API_KEY` is injected only at runtime. It must
+`openai/gpt-5.6-terra`. `BIFROST_API_KEY` is injected only at runtime. It must
 never be passed to `eve build`, a Docker build argument, or an image layer. A
 non-secret placeholder exists only so the secret-free image build classifies
 the compiled fallback as an external `bifrost` provider. The live AI SDK model

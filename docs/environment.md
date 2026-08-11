@@ -114,7 +114,7 @@ non-secret placeholder, and a runtime missing either value fails closed without
 selecting Vercel AI Gateway or public OpenAI.
 
 `BIFROST_ROUTABLE_PREFIXES` defaults to `openai/`. A stored selection outside
-the accepted prefixes is replaced by `openai/gpt-5.6-sol` with its 400,000-token
+the accepted prefixes is replaced by `openai/gpt-5.6-terra` with its 400,000-token
 window. `EVE_MODEL_DISPATCH_CONCURRENCY` defaults to two and validates the range
 one through twenty. It controls initial `receive()` launch batches in one
 dispatcher, not process-global active sessions after Eve returns from

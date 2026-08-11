@@ -11,7 +11,7 @@ are in `docs/setup.md`.
 
 ## Model
 
-The production default is `openai/gpt-5.6-sol` with a 400,000-token context
+The production default is `openai/gpt-5.6-terra` with a 400,000-token context
 window. `DEFAULT_AGENT_MODEL` stays in `@crm/db/settings` because the agent and
 the API both need it.
 
@@ -28,12 +28,16 @@ the API both need it.
   current selection; the runner reads its immutable version selection at step
   scope.
 - An unroutable stored or version selection is replaced by
-  `openai/gpt-5.6-sol` and the replacement always gets the approved 400,000-token
+  `openai/gpt-5.6-terra` and the replacement always gets the approved 400,000-token
   window rather than the rejected model's window.
 - Reasoning is `high` on all three agents. `compaction.model` stays unset, so
   compaction reuses the active Bifrost model.
 - The deployment-owned production catalog contains only approved models and
   does not fetch the Vercel catalog.
+- Eve's built-in `web_search` is disabled. It maps direct external models to the
+  unsupported `gateway.parallel_search` provider tool and is not the approved
+  Context.dev company-data path. Disabling it removes the repeated AI SDK warning
+  instead of silently dropping a tool at request time.
 
 ## Pictures are copied, never linked
 

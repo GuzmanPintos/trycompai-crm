@@ -8,7 +8,7 @@ import {
 export const SETTINGS_ID = "app";
 
 export const DEFAULT_AGENT_MODEL = {
-	id: "openai/gpt-5.6-sol",
+	id: "openai/gpt-5.6-terra",
 	contextWindowTokens: 400_000,
 } as const;
 
