@@ -8,9 +8,13 @@ on:
         required: true
         type: boolean
         default: false
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [tenki]
 
 concurrency:
-  group: publish-images-${{ github.ref }}
+  group: publish-images-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
 
 permissions:
@@ -24,17 +28,27 @@ env:
   REGISTRY_HOST: us-docker.pkg.dev
   CI_GCP_REPOSITORY: mcp
   CRM_ORIGIN: https://crm.agentic-talos.blocksubmit.com
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   publish:
     name: Build and publish CRM images
-    if: github.ref == 'refs/heads/tenki' && inputs.confirm
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/tenki' && inputs.confirm) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'tenki')
     runs-on: tenki-standard-large-8c-16g
     timeout-minutes: 90
 
     steps:
-      - name: Checkout
+      - name: Checkout exact CI source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Verify source provenance
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
@@ -73,18 +87,37 @@ jobs:
       - name: Push all images
         run: |
           set -euo pipefail
-          tag="sha-${GITHUB_SHA}"
+          sha_tag="sha-${SOURCE_SHA}"
+          commit_epoch="$(git show -s --format=%ct "$SOURCE_SHA")"
+          test "${#commit_epoch}" -eq 10
+          release_tag="tenki-${commit_epoch}-${SOURCE_SHA}"
           registry="${REGISTRY_HOST}/${CI_GCP_PROJECT_ID}/${CI_GCP_REPOSITORY}"
+
+          # Publish every content tag first. The sortable release aliases are
+          # added only after all three image pushes have succeeded, which keeps
+          # Flux from observing a release while one component is still building.
           for component in web agent api; do
-            remote_ref="${registry}/crm-${component}:${tag}"
+            remote_ref="${registry}/crm-${component}:${sha_tag}"
             docker tag "crm-${component}:build" "$remote_ref"
             docker push "$remote_ref"
           done
+
+          for component in web agent api; do
+            repository="${registry}/crm-${component}"
+            digest="$(docker buildx imagetools inspect "${repository}:${sha_tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+            test -n "$digest"
+            docker buildx imagetools create \
+              --tag "${repository}:${release_tag}" \
+              "${repository}@${digest}"
+          done
+
           {
             echo "### Published CRM image digests"
+            echo "- Source: \`${SOURCE_SHA}\`"
+            echo "- Flux release tag: \`${release_tag}\`"
             for component in web agent api; do
-              remote_ref="${registry}/crm-${component}:${tag}"
-              digest="$(docker buildx imagetools inspect "$remote_ref" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-              echo "- \`${remote_ref}@${digest}\`"
+              repository="${registry}/crm-${component}"
+              digest="$(docker buildx imagetools inspect "${repository}:${release_tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+              echo "- \`${repository}:${release_tag}@${digest}\`"
             done
           } >> "$GITHUB_STEP_SUMMARY"
